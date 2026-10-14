@@ -1,0 +1,263 @@
+from abc import ABC, abstractmethod
+from datetime import datetime
+import flet as ft
+
+# Формат времени для отчетов (сделал константой, как препод просил)
+TIME_FORMAT = "%d.%m.%Y %H:%M:%S"
+
+class BaseEntity(ABC):
+    def __init__(self, object_id):
+        self._id = object_id
+
+    @property
+    def id(self):
+        return self._id
+
+    @id.setter
+    def id(self, value):
+        if value <= 0:
+            raise ValueError("ID должен быть положительным")
+        self._id = value
+
+    @abstractmethod
+    def display_name(self):
+        pass
+
+    def __eq__(self, other):
+        return isinstance(other, BaseEntity) and self.id == other.id
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(id={self.id})"
+
+    def __str__(self):
+        return self.display_name()
+
+
+class Client(BaseEntity):
+    def __init__(self, object_id, name, phone):
+        super().__init__(object_id)
+        self._name = name
+        self._phone = phone
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, value):
+        if not value.strip():
+            raise ValueError("Имя не может быть пустым")
+        self._name = value.strip()
+
+    @property
+    def phone(self):
+        return self._phone
+
+    @phone.setter
+    def phone(self, value):
+        self._phone = value.strip()
+
+    def display_name(self):
+        return f"{self.name} ({self.phone})"
+
+    def __str__(self):
+        return f"Клиент: {self.name}, тел: {self.phone}"
+
+
+class Service(BaseEntity):
+    def __init__(self, object_id, title, price):
+        super().__init__(object_id)
+        self._title = title
+        self._price = price
+
+    @property
+    def title(self):
+        return self._title
+
+    @title.setter
+    def title(self, value):
+        self._title = value.strip()
+
+    @property
+    def price(self):
+        return self._price
+
+    @price.setter
+    def price(self, value):
+        if value < 0:
+            raise ValueError("Цена не может быть меньше нуля")
+        self._price = value
+
+    def display_name(self):
+        return f"{self.title} - {self._price} руб."
+
+
+class Appointment(BaseEntity):
+    def __init__(self, object_id, client, service, date_text):
+        super().__init__(object_id)
+        self._client = client
+        self._service = service
+        self._date_text = date_text
+
+    def display_name(self):
+        return f"{self._client.name} -> {self._service.title} [{self._date_text}]"
+
+
+class AppUser(BaseEntity):
+    def __init__(self, object_id, login):
+        super().__init__(object_id)
+        self._login = login
+
+    @property
+    def login(self):
+        return self._login
+
+    def display_name(self):
+        return self._login
+
+
+class AuditRecord:
+    def __init__(self, login, time_in, time_out):
+        self.login = login
+        self.time_in = time_in
+        self.time_out = time_out
+
+
+# Самописная структура данных (для лабораторной по ООП)
+class ObjectMap:
+    def __init__(self):
+        self.data = []
+
+    def put(self, k, v):
+        for item in self.data:
+            if item[0] == k:
+                item[1] = v
+                return
+        self.data.append([k, v])
+
+    def get(self, k):
+        for item in self.data:
+            if item[0] == k:
+                return item[1]
+        return None
+
+
+# Компоненты интерфейса Flet
+class Header(ft.Container):
+    def __init__(self, text):
+        super().__init__(
+            content=ft.Text(text, size=20, weight="bold"),
+            padding=10,
+            alignment=ft.alignment.center
+        )
+
+
+class ClientCard(ft.Card):
+    def __init__(self, client_obj):
+        super().__init__(
+            content=ft.Container(
+                content=ft.Text(client_obj.display_name()),
+                padding=12
+            )
+        )
+
+
+class ClientList(ft.Column):
+    def __init__(self):
+        super().__init__()
+        self.spacing = 5
+
+    erum = set_clients = lambda self, cl_list: setattr(self, 'controls', [ClientCard(x) for x in cl_list])
+    # Обычный метод для обновления списка, чтобы не выглядело слишком умно:
+    def update_clients(self, lst):
+        self.controls = [ClientCard(c) for c in lst]
+
+
+class AppController:
+    def __init__(self, page):
+        self.page = page
+        self.user = AppUser(1, "admin_user") # залогиненый тип
+        self.time_in = datetime.now()
+        
+        self.clients = []
+        self.services = []
+        self.my_map = ObjectMap()
+
+        # Поля ввода
+        self.login_input = ft.TextField(label="Логин", width=300)
+        self.pass_input = ft.TextField(label="Пароль", password=True, width=300)
+        self.search_box = ft.TextField(label="Поиск по имени", width=300, on_change=self.do_search)
+        
+        self.cl_list_view = ClientList()
+        self.status_bar = ft.Text("Приложение запущенно", color="green")
+
+        self.init_data()
+        self.setup_ui()
+
+    def init_data(self):
+        # Заполняем тестовыми клиентами вручную
+        names_list = ["Иван", "Петр", "Светлана", "Ольга", "Анна", "Сергей"]
+        for i, name in enumerate(names_list, start=1):
+            c = Client(i, name, f"+7-999-000-00-0{i}")
+            self.clients.append(c)
+            self.my_map.put(c.id, c)
+
+        self.services.append(Service(1, "Стрижка", 1500))
+        self.services.append(Service(2, "Покраска", 3000))
+
+    def setup_ui(self):
+        self.page.title = "Учет клиентов (Учебный проект)"
+        self.cl_list_view.update_clients(self.clients)
+
+        btn_add = ft.ElevatedButton("Добавить", on_click=self.add_click)
+        btn_del = ft.ElevatedButton("Удалить", on_click=self.del_click)
+
+        self.page.add(
+            Header("База данных клиентов"),
+            ft.Row([self.login_input, self.pass_input], alignment="center"),
+            self.search_box,
+            ft.Row([btn_add, btn_del], alignment="center"),
+            self.cl_list_view,
+            self.status_bar
+        )
+
+    def do_search(self, e):
+        q = self.search_box.value.lower()
+        filtered = [c for c in self.clients if q in c.name.lower()]
+        self.cl_list_view.update_clients(filtered)
+        self.page.update()
+
+    def add_click(self, e):
+        new_id = len(self.clients) + 1
+        c = Client(new_id, f"Клиент #{new_id}", "+7-000-000-00-00")
+        self.clients.append(c)
+        self.my_map.put(c.id, c)
+        self.cl_list_view.update_clients(self.clients)
+        self.status_bar.value = f"Добавлен клиент: {c.name}"
+        self.page.update()
+
+    def del_click(self, e):
+        if len(self.clients) > 0:
+            removed = self.clients.pop()
+            self.status_bar.value = f"Удалили: {removed.name}"
+            self.cl_list_view.update_clients(self.clients)
+            self.page.update()
+
+    def on_close(self):
+        # Пишем в лог при закрытии
+        t_in = self.time_in.strftime(TIME_FORMAT)
+        t_out = datetime.now().strftime(TIME_FORMAT)
+        try:
+            f = open("report.txt", "a", encoding="utf-8")
+            f.write(f"{self.user.login} | {t_in} | {t_out}\n")
+            f.close()
+        except Exception as ex:
+            print("Ошибка записи файла:", ex)
+
+
+def main(page: ft.Page):
+    app = AppController(page)
+    page.on_disconnect = lambda e: app.on_close()
+
+if __name__ == "__main__":
+    ft.app(target=main)
